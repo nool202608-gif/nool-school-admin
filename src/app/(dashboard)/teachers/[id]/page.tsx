@@ -52,15 +52,15 @@ const paperColumns: GridColDef<SchoolQuestionPaper>[] = [
 export default function TeacherDetailPage() {
   const { id } = useParams<{ id: string }>();
 
-  const teachersState = useAsyncData(() => listTeachers(), []);
-  const classesState = useAsyncData(() => listClasses(), []);
+  const teachersState = useAsyncData('teachers', () => listTeachers());
+  const classesState = useAsyncData('classes', () => listClasses());
   const testsState = useAsyncData(
+    `teacher-voice-tests:${id}`,
     () => listSchoolVoiceTests({ teacherId: id, limit: PAGE_SIZE, offset: 0 }),
-    [id],
   );
   const papersState = useAsyncData(
+    `teacher-question-papers:${id}`,
     () => listSchoolQuestionPapers({ createdBy: id, limit: PAGE_SIZE, offset: 0 }),
-    [id],
   );
 
   const teacher = teachersState.status === 'success' ? teachersState.data.find((t) => t.id === id) : undefined;
@@ -98,13 +98,13 @@ export default function TeacherDetailPage() {
   return (
     <div className="page">
       <div className="page-head">
-        <div>
-          <Link href="/teachers" className="lead" style={{ display: 'inline-block', marginBottom: 6 }}>
-            ← Back to Teachers
-          </Link>
+        <Link href="/teachers" className="back-link">
+          ← Back to Teachers
+        </Link>
+        <div className="page-head-row">
           <h1>{teacher.displayName}</h1>
-          <p className="lead">{teacher.email}</p>
         </div>
+        <p className="lead">{teacher.email}</p>
       </div>
 
       <div className="settings-grid" style={{ marginBottom: 24 }}>

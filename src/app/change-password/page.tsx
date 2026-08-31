@@ -4,9 +4,12 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { updatePassword } from 'firebase/auth';
 
+import { Footer } from '@/components/Footer';
+import { PasswordStrengthMeter } from '@/components/PasswordStrengthMeter';
 import { acknowledgePasswordChange } from '@/lib/api';
 import { getFirebaseAuth } from '@/lib/firebase';
 import { normalizeError } from '@/lib/errors';
+import { isPasswordValid } from '@/lib/passwordPolicy';
 import { useAuth } from '@/lib/useAuth';
 
 /**
@@ -35,8 +38,7 @@ export default function ChangePasswordPage() {
   }, [status, profile, router]);
 
   const mismatch = confirmPassword.length > 0 && newPassword !== confirmPassword;
-  const tooShort = newPassword.length > 0 && newPassword.length < 8;
-  const canSubmit = newPassword.length >= 8 && newPassword === confirmPassword && !submitting;
+  const canSubmit = isPasswordValid(newPassword) && newPassword === confirmPassword && !submitting;
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -83,6 +85,7 @@ export default function ChangePasswordPage() {
               required
             />
           </div>
+          <PasswordStrengthMeter password={newPassword} />
           <div className="form-row">
             <label htmlFor="confirm-password">Confirm new password</label>
             <input
@@ -96,9 +99,6 @@ export default function ChangePasswordPage() {
             />
           </div>
 
-          {tooShort ? (
-            <p style={{ color: 'var(--color-red)', marginBottom: 12 }}>Must be at least 8 characters.</p>
-          ) : null}
           {mismatch ? (
             <p style={{ color: 'var(--color-red)', marginBottom: 12 }}>Passwords don&apos;t match.</p>
           ) : null}
@@ -124,6 +124,7 @@ export default function ChangePasswordPage() {
           Sign out instead
         </button>
       </div>
+      <Footer />
     </div>
   );
 }

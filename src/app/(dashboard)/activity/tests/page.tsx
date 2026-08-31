@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
 import type { GridColDef } from '@mui/x-data-grid';
 
 import { DataTable } from '@/components/DataTable';
 import { EmptyState, ErrorState, LoadingState } from '@/components/states';
-import { listSchoolVoiceTests } from '@/lib/api';
+import { listClasses, listSchoolVoiceTests, listTeachers } from '@/lib/api';
 import { useAsyncData } from '@/lib/useAsyncData';
+import { useUrlPaginationModel, useUrlParam } from '@/lib/useUrlState';
 import type { SchoolVoiceTest, TestStatus } from '@/lib/types';
 
 const PAGE_SIZE = 20;
@@ -44,17 +44,70 @@ const columns: GridColDef<SchoolVoiceTest>[] = [
 ];
 
 export default function SchoolTestsPage() {
-  const [offset, setOffset] = useState(0);
-  const state = useAsyncData(() => listSchoolVoiceTests({ limit: PAGE_SIZE, offset }), [offset]);
+  const [classFilter, setClassFilter] = useUrlParam('classId', '');
+  const [teacherFilter, setTeacherFilter] = useUrlParam('teacherId', '');
+  const [paginationModel, setPaginationModel] = useUrlPaginationModel(PAGE_SIZE);
+  const classesState = useAsyncData('classes', () => listClasses());
+  const teachersState = useAsyncData('teachers', () => listTeachers());
+  const state = useAsyncData(
+    `voice-tests:${classFilter}:${teacherFilter}:${paginationModel.page}:${paginationModel.pageSize}`,
+    () =>
+      listSchoolVoiceTests({
+        classId: classFilter || undefined,
+        teacherId: teacherFilter || undefined,
+        limit: paginationModel.pageSize,
+        offset: paginationModel.page * paginationModel.pageSize,
+      }),
+  );
+  const classes = classesState.status === 'success' ? classesState.data : [];
+  const teachers = teachersState.status === 'success' ? teachersState.data : [];
+
+  function resetToFirstPage() {
+    setPaginationModel({ page: 0, pageSize: PAGE_SIZE });
+  }
 
   return (
     <div className="page">
       <div className="page-head">
-        <div>
-          <span className="eyebrow">Activity</span>
+        <div className="page-head-row">
           <h1>Voice Tests</h1>
-          <p className="lead">Every Test created across the school, by any teacher.</p>
         </div>
+        <p className="lead">Every Test created across the school, by any teacher.</p>
+      </div>
+
+      <div className="table-toolbar">
+        <select
+          className="field"
+          style={{ maxWidth: 240 }}
+          value={classFilter}
+          onChange={(e) => {
+            setClassFilter(e.target.value);
+            resetToFirstPage();
+          }}
+        >
+          <option value="">All classes</option>
+          {classes.map((c) => (
+            <option key={c.id} value={c.id}>
+              Class {c.grade} · {c.section}
+            </option>
+          ))}
+        </select>
+        <select
+          className="field"
+          style={{ maxWidth: 240 }}
+          value={teacherFilter}
+          onChange={(e) => {
+            setTeacherFilter(e.target.value);
+            resetToFirstPage();
+          }}
+        >
+          <option value="">All teachers</option>
+          {teachers.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.displayName}
+            </option>
+          ))}
+        </select>
       </div>
 
       {state.status === 'loading' ? <LoadingState label="Loading tests" /> : null}
@@ -65,32 +118,14 @@ export default function SchoolTestsPage() {
       ) : null}
 
       {state.status === 'success' && state.data.items.length > 0 ? (
-        <>
-          <DataTable rows={state.data.items} columns={columns} pageSize={PAGE_SIZE} />
-          <div className="table-toolbar" style={{ justifyContent: 'space-between' }}>
-            <span className="lead">
-              {offset + 1}–{Math.min(offset + PAGE_SIZE, state.data.total)} of {state.data.total}
-            </span>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button
-                type="button"
-                className="btn white sm"
-                disabled={offset === 0}
-                onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                className="btn white sm"
-                disabled={offset + PAGE_SIZE >= state.data.total}
-                onClick={() => setOffset(offset + PAGE_SIZE)}
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        </>
+        <DataTable
+          rows={state.data.items}
+          columns={columns}
+          server
+          rowCount={state.data.total}
+          paginationModel={paginationModel}
+          onPaginationModelChange={setPaginationModel}
+        />
       ) : null}
     </div>
   );

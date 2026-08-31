@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
 import type { GridColDef } from '@mui/x-data-grid';
 
 import { DataTable } from '@/components/DataTable';
 import { EmptyState, ErrorState, LoadingState } from '@/components/states';
-import { listSchoolQuestionPapers } from '@/lib/api';
+import { getCurriculum, listSchoolQuestionPapers, listTeachers } from '@/lib/api';
 import { useAsyncData } from '@/lib/useAsyncData';
+import { useUrlPaginationModel, useUrlParam } from '@/lib/useUrlState';
 import type { QuestionPaperStatus, SchoolQuestionPaper } from '@/lib/types';
 
 const PAGE_SIZE = 20;
@@ -37,17 +37,70 @@ const columns: GridColDef<SchoolQuestionPaper>[] = [
 ];
 
 export default function SchoolQuestionPapersPage() {
-  const [offset, setOffset] = useState(0);
-  const state = useAsyncData(() => listSchoolQuestionPapers({ limit: PAGE_SIZE, offset }), [offset]);
+  const [subjectFilter, setSubjectFilter] = useUrlParam('subjectId', '');
+  const [createdByFilter, setCreatedByFilter] = useUrlParam('createdBy', '');
+  const [paginationModel, setPaginationModel] = useUrlPaginationModel(PAGE_SIZE);
+  const curriculumState = useAsyncData('curriculum', () => getCurriculum());
+  const teachersState = useAsyncData('teachers', () => listTeachers());
+  const state = useAsyncData(
+    `question-papers:${subjectFilter}:${createdByFilter}:${paginationModel.page}:${paginationModel.pageSize}`,
+    () =>
+      listSchoolQuestionPapers({
+        subjectId: subjectFilter || undefined,
+        createdBy: createdByFilter || undefined,
+        limit: paginationModel.pageSize,
+        offset: paginationModel.page * paginationModel.pageSize,
+      }),
+  );
+  const subjects = curriculumState.status === 'success' ? curriculumState.data.subjects.filter((s) => s.enabled) : [];
+  const teachers = teachersState.status === 'success' ? teachersState.data : [];
+
+  function resetToFirstPage() {
+    setPaginationModel({ page: 0, pageSize: PAGE_SIZE });
+  }
 
   return (
     <div className="page">
       <div className="page-head">
-        <div>
-          <span className="eyebrow">Activity</span>
+        <div className="page-head-row">
           <h1>Question Papers</h1>
-          <p className="lead">Question Papers created across the school, by any teacher.</p>
         </div>
+        <p className="lead">Question Papers created across the school, by any teacher.</p>
+      </div>
+
+      <div className="table-toolbar">
+        <select
+          className="field"
+          style={{ maxWidth: 240 }}
+          value={subjectFilter}
+          onChange={(e) => {
+            setSubjectFilter(e.target.value);
+            resetToFirstPage();
+          }}
+        >
+          <option value="">All subjects</option>
+          {subjects.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <select
+          className="field"
+          style={{ maxWidth: 240 }}
+          value={createdByFilter}
+          onChange={(e) => {
+            setCreatedByFilter(e.target.value);
+            resetToFirstPage();
+          }}
+        >
+          <option value="">All teachers</option>
+          {teachers.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.displayName}
+            </option>
+          ))}
+        </select>
       </div>
 
       {state.status === 'loading' ? <LoadingState label="Loading question papers" /> : null}
@@ -61,32 +114,14 @@ export default function SchoolQuestionPapersPage() {
       ) : null}
 
       {state.status === 'success' && state.data.items.length > 0 ? (
-        <>
-          <DataTable rows={state.data.items} columns={columns} pageSize={PAGE_SIZE} />
-          <div className="table-toolbar" style={{ justifyContent: 'space-between' }}>
-            <span className="lead">
-              {offset + 1}–{Math.min(offset + PAGE_SIZE, state.data.total)} of {state.data.total}
-            </span>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button
-                type="button"
-                className="btn white sm"
-                disabled={offset === 0}
-                onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                className="btn white sm"
-                disabled={offset + PAGE_SIZE >= state.data.total}
-                onClick={() => setOffset(offset + PAGE_SIZE)}
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        </>
+        <DataTable
+          rows={state.data.items}
+          columns={columns}
+          server
+          rowCount={state.data.total}
+          paginationModel={paginationModel}
+          onPaginationModelChange={setPaginationModel}
+        />
       ) : null}
     </div>
   );

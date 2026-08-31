@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
 import type { GridColDef } from '@mui/x-data-grid';
 
 import { DataTable } from '@/components/DataTable';
 import { EmptyState, ErrorState, LoadingState } from '@/components/states';
-import { getSchoolLeaderboard } from '@/lib/api';
+import { getSchoolLeaderboard, listClasses } from '@/lib/api';
 import { useAsyncData } from '@/lib/useAsyncData';
+import { useUrlPaginationModel, useUrlParam } from '@/lib/useUrlState';
 import type { SchoolLeaderboardEntry } from '@/lib/types';
 
 const PAGE_SIZE = 20;
@@ -19,58 +19,65 @@ const columns: GridColDef<SchoolLeaderboardEntry>[] = [
 ];
 
 export default function SchoolLeaderboardPage() {
-  const [offset, setOffset] = useState(0);
-  const state = useAsyncData(() => getSchoolLeaderboard({ limit: PAGE_SIZE, offset }), [offset]);
+  const [classFilter, setClassFilter] = useUrlParam('classId', '');
+  const [paginationModel, setPaginationModel] = useUrlPaginationModel(PAGE_SIZE);
+  const classesState = useAsyncData('classes', () => listClasses());
+  const state = useAsyncData(
+    `leaderboard:${classFilter}:${paginationModel.page}:${paginationModel.pageSize}`,
+    () =>
+      getSchoolLeaderboard({
+        classId: classFilter || undefined,
+        limit: paginationModel.pageSize,
+        offset: paginationModel.page * paginationModel.pageSize,
+      }),
+  );
+  const classes = classesState.status === 'success' ? classesState.data : [];
 
   return (
     <div className="page">
       <div className="page-head">
-        <div>
-          <span className="eyebrow">Activity</span>
+        <div className="page-head-row">
           <h1>Leaderboard</h1>
-          <p className="lead">Every student in the school, ranked by points.</p>
         </div>
+        <p className="lead">Every student in the school, ranked by points - school-wide, or narrowed to one class.</p>
+      </div>
+
+      <div className="table-toolbar">
+        <select
+          className="field"
+          style={{ maxWidth: 240 }}
+          value={classFilter}
+          onChange={(e) => {
+            setClassFilter(e.target.value);
+            setPaginationModel({ page: 0, pageSize: PAGE_SIZE });
+          }}
+        >
+          <option value="">All classes (school-wide)</option>
+          {classes.map((c) => (
+            <option key={c.id} value={c.id}>
+              Class {c.grade} · {c.section}
+            </option>
+          ))}
+        </select>
       </div>
 
       {state.status === 'loading' ? <LoadingState label="Loading leaderboard" /> : null}
       {state.status === 'error' ? <ErrorState onRetry={state.retry} /> : null}
 
       {state.status === 'success' && state.data.items.length === 0 ? (
-        <EmptyState title="No students yet" message="Once students earn points, the school-wide ranking will show up here." />
+        <EmptyState title="No students yet" message="Once students earn points, the ranking will show up here." />
       ) : null}
 
       {state.status === 'success' && state.data.items.length > 0 ? (
-        <>
-          <DataTable
-            rows={state.data.items}
-            columns={columns}
-            getRowId={(row) => row.studentId}
-            pageSize={PAGE_SIZE}
-          />
-          <div className="table-toolbar" style={{ justifyContent: 'space-between' }}>
-            <span className="lead">
-              {offset + 1}–{Math.min(offset + PAGE_SIZE, state.data.total)} of {state.data.total}
-            </span>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button
-                type="button"
-                className="btn white sm"
-                disabled={offset === 0}
-                onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                className="btn white sm"
-                disabled={offset + PAGE_SIZE >= state.data.total}
-                onClick={() => setOffset(offset + PAGE_SIZE)}
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        </>
+        <DataTable
+          rows={state.data.items}
+          columns={columns}
+          getRowId={(row) => row.studentId}
+          server
+          rowCount={state.data.total}
+          paginationModel={paginationModel}
+          onPaginationModelChange={setPaginationModel}
+        />
       ) : null}
     </div>
   );

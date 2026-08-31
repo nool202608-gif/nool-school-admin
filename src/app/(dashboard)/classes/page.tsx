@@ -11,6 +11,7 @@ import { DataTable, EMPTY_SELECTION, selectedIdsFrom } from '@/components/DataTa
 import { BanIcon, CheckCircleIcon, EditIcon, PlusIcon, TrashIcon, UsersIcon } from '@/components/Icon';
 import { EmptyState, ErrorState, LoadingState } from '@/components/states';
 import { Modal } from '@/components/Modal';
+import { SearchableSelect } from '@/components/SearchableSelect';
 import { SelectionBar } from '@/components/SelectionBar';
 import { useToast } from '@/components/Toast';
 import {
@@ -18,6 +19,7 @@ import {
   deleteClass,
   getCurriculum,
   listClasses,
+  listGrades,
   listTeachers,
   updateClass,
   updateClassAssignments,
@@ -25,12 +27,13 @@ import {
 } from '@/lib/api';
 import { normalizeError } from '@/lib/errors';
 import { useAsyncData } from '@/lib/useAsyncData';
-import { MAX_GRADE, MIN_GRADE, type ClassAssignment, type SchoolAdminClass } from '@/lib/types';
+import type { ClassAssignment, SchoolAdminClass } from '@/lib/types';
 
 export default function ClassesPage() {
-  const state = useAsyncData(() => listClasses(), []);
-  const teachersState = useAsyncData(() => listTeachers(), []);
-  const curriculumState = useAsyncData(() => getCurriculum(), []);
+  const state = useAsyncData('classes', () => listClasses());
+  const teachersState = useAsyncData('teachers', () => listTeachers());
+  const curriculumState = useAsyncData('curriculum', () => getCurriculum());
+  const gradesState = useAsyncData('grades-for-sections', () => listGrades());
   const { show } = useToast();
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -51,15 +54,21 @@ export default function ClassesPage() {
   const [deleteTarget, setDeleteTarget] = useState<SchoolAdminClass | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeactivateOpen, setBulkDeactivateOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [selection, setSelection] = useState<GridRowSelectionModel>(EMPTY_SELECTION);
 
   const classes = state.status === 'success' ? state.data : [];
   const selectedIds = selectedIdsFrom(selection, classes, (c) => c.id);
+  // Only grades your platform admin has actually allocated to this school
+  // (an active SchoolGrade row) are selectable for a new/edited Section -
+  // previously this was a free-typed 1-12 number, letting a section get
+  // created under a Class that was never set up for this school at all.
+  const allocatedGrades = gradesState.status === 'success' ? gradesState.data.filter((g) => g.status === 'ACTIVE') : [];
 
   function validGrade(value: string): number | null {
     const n = Number(value);
-    if (!Number.isInteger(n) || n < MIN_GRADE || n > MAX_GRADE) return null;
+    if (!Number.isInteger(n) || !allocatedGrades.some((g) => g.grade === n)) return null;
     return n;
   }
 
@@ -67,7 +76,7 @@ export default function ClassesPage() {
     event.preventDefault();
     const gradeNum = validGrade(grade);
     if (gradeNum === null) {
-      setFormError(`Grade must be a whole number between ${MIN_GRADE} and ${MAX_GRADE}.`);
+      setFormError('Select a Class that has been allocated to this school.');
       return;
     }
     setSubmitting(true);
@@ -97,7 +106,7 @@ export default function ClassesPage() {
     if (!editTarget) return;
     const gradeNum = validGrade(editGrade);
     if (gradeNum === null) {
-      setEditError(`Grade must be a whole number between ${MIN_GRADE} and ${MAX_GRADE}.`);
+      setEditError('Select a Class that has been allocated to this school.');
       return;
     }
     setEditSubmitting(true);
@@ -105,7 +114,7 @@ export default function ClassesPage() {
     try {
       await updateClass(editTarget.id, { grade: gradeNum, section: editSection });
       if (state.status === 'success') state.refetch();
-      show('Class updated.', 'success');
+      show('Section updated.', 'success');
       setEditTarget(null);
     } catch (cause) {
       setEditError(normalizeError(cause).message);
@@ -126,7 +135,7 @@ export default function ClassesPage() {
       const next = schoolClass.status === 'DEACTIVATED' ? 'ACTIVE' : 'DEACTIVATED';
       await updateClassStatus(schoolClass.id, next);
       if (state.status === 'success') state.refetch();
-      show(next === 'ACTIVE' ? 'Class reactivated.' : 'Class deactivated.', 'success');
+      show(next === 'ACTIVE' ? 'Section reactivated.' : 'Section deactivated.', 'success');
     } catch (cause) {
       show(normalizeError(cause).message, 'error');
     } finally {
@@ -153,7 +162,7 @@ export default function ClassesPage() {
     setBulkBusy(true);
     try {
       await Promise.all(selectedIds.map((id) => deleteClass(String(id))));
-      show(`${selectedIds.length} class${selectedIds.length === 1 ? '' : 'es'} deleted.`, 'success');
+      show(`${selectedIds.length} section${selectedIds.length === 1 ? '' : 's'} deleted.`, 'success');
       setSelection(EMPTY_SELECTION);
       setBulkDeleteOpen(false);
       if (state.status === 'success') state.refetch();
@@ -168,8 +177,9 @@ export default function ClassesPage() {
     setBulkBusy(true);
     try {
       await Promise.all(selectedIds.map((id) => updateClassStatus(String(id), next)));
-      show(`${selectedIds.length} class${selectedIds.length === 1 ? '' : 'es'} updated.`, 'success');
+      show(`${selectedIds.length} section${selectedIds.length === 1 ? '' : 's'} updated.`, 'success');
       setSelection(EMPTY_SELECTION);
+      setBulkDeactivateOpen(false);
       if (state.status === 'success') state.refetch();
     } catch (cause) {
       show(normalizeError(cause).message, 'error');
@@ -181,7 +191,7 @@ export default function ClassesPage() {
   const columns: GridColDef<SchoolAdminClass>[] = [
     {
       field: 'grade',
-      headerName: 'Class',
+      headerName: 'Section',
       width: 160,
       valueGetter: (_value, row) => `Class ${row.grade} · ${row.section}`,
     },
@@ -241,24 +251,25 @@ export default function ClassesPage() {
   return (
     <div className="page">
       <div className="page-head">
-        <div>
-          <span className="eyebrow">Roster</span>
-          <h1>Classes</h1>
-          <p className="lead">Create classes (grades 1–12) and see teacher/subject assignments at a glance.</p>
+        <div className="page-head-row">
+          <h1>Sections</h1>
+          <button type="button" className="btn yellow" onClick={() => setCreateOpen(true)}>
+            <PlusIcon /> Add section
+          </button>
         </div>
-        <button type="button" className="btn yellow" onClick={() => setCreateOpen(true)}>
-          <PlusIcon /> Create class
-        </button>
+        <p className="lead">
+          Add sections within each Class (grade 1–12) and see teacher/subject assignments at a glance.
+        </p>
       </div>
 
-      {state.status === 'loading' ? <LoadingState label="Loading classes" /> : null}
+      {state.status === 'loading' ? <LoadingState label="Loading sections" /> : null}
       {state.status === 'error' ? <ErrorState onRetry={state.retry} /> : null}
 
       {state.status === 'success' && classes.length === 0 ? (
         <EmptyState
-          title="No classes yet"
-          message="Create your first class to start building the roster."
-          actionLabel="Create class"
+          title="No sections yet"
+          message="Add your first section to start building the roster."
+          actionLabel="Add section"
           onAction={() => setCreateOpen(true)}
         />
       ) : null}
@@ -269,7 +280,7 @@ export default function ClassesPage() {
             <button type="button" className="btn white sm" disabled={bulkBusy} onClick={() => void handleBulkStatus('ACTIVE')}>
               <CheckCircleIcon /> Activate
             </button>
-            <button type="button" className="btn white sm" disabled={bulkBusy} onClick={() => void handleBulkStatus('DEACTIVATED')}>
+            <button type="button" className="btn white sm" disabled={bulkBusy} onClick={() => setBulkDeactivateOpen(true)}>
               <BanIcon /> Deactivate
             </button>
             <button type="button" className="btn danger sm" disabled={bulkBusy} onClick={() => setBulkDeleteOpen(true)}>
@@ -287,20 +298,19 @@ export default function ClassesPage() {
         </>
       ) : null}
 
-      <Modal open={createOpen} title="Create class" onClose={() => setCreateOpen(false)}>
+      <Modal open={createOpen} title="Add section" onClose={() => setCreateOpen(false)}>
         <form onSubmit={handleCreate}>
           <div className="form-row-inline">
             <div className="form-row">
-              <label htmlFor="class-grade">Grade (1–12)</label>
-              <input
+              <label htmlFor="class-grade">Class</label>
+              <SearchableSelect
                 id="class-grade"
-                type="number"
-                min={MIN_GRADE}
-                max={MAX_GRADE}
-                className="field"
                 value={grade}
-                onChange={(e) => setGrade(e.target.value)}
+                onChange={setGrade}
                 required
+                disabled={allocatedGrades.length === 0}
+                placeholder={allocatedGrades.length === 0 ? 'No classes allocated yet' : 'Select a class'}
+                options={allocatedGrades.map((g) => ({ value: String(g.grade), label: `Class ${g.grade}` }))}
               />
             </div>
             <div className="form-row">
@@ -314,32 +324,44 @@ export default function ClassesPage() {
               />
             </div>
           </div>
+          {allocatedGrades.length === 0 ? (
+            <p style={{ color: 'var(--color-muted)', marginTop: -8, marginBottom: 16 }}>
+              No classes have been allocated to this school yet - ask your platform admin to add one.
+            </p>
+          ) : null}
           {formError ? <p style={{ color: 'var(--color-red)' }}>{formError}</p> : null}
           <div className="modal-actions">
             <button type="button" className="btn white" onClick={() => setCreateOpen(false)}>
               Cancel
             </button>
             <button type="submit" className="btn yellow" disabled={submitting}>
-              {submitting ? 'Creating…' : 'Create class'}
+              {submitting ? 'Adding…' : 'Add section'}
             </button>
           </div>
         </form>
       </Modal>
 
-      <Modal open={editTarget !== null} title="Edit class" onClose={() => setEditTarget(null)}>
+      <Modal open={editTarget !== null} title="Edit section" onClose={() => setEditTarget(null)}>
         <form onSubmit={handleEditSubmit}>
           <div className="form-row-inline">
             <div className="form-row">
-              <label htmlFor="edit-class-grade">Grade (1–12)</label>
-              <input
+              <label htmlFor="edit-class-grade">Class</label>
+              <SearchableSelect
                 id="edit-class-grade"
-                type="number"
-                min={MIN_GRADE}
-                max={MAX_GRADE}
-                className="field"
                 value={editGrade}
-                onChange={(e) => setEditGrade(e.target.value)}
+                onChange={setEditGrade}
                 required
+                options={[
+                  ...allocatedGrades.map((g) => ({ value: String(g.grade), label: `Class ${g.grade}` })),
+                  // Preserves this section's current grade as a selectable
+                  // option even if it's since been deallocated/deactivated -
+                  // otherwise editing it (without touching Class at all)
+                  // would silently drop it once the SearchableSelect has no
+                  // matching option to show as selected.
+                  ...(editGrade && !allocatedGrades.some((g) => String(g.grade) === editGrade)
+                    ? [{ value: editGrade, label: `Class ${editGrade}` }]
+                    : []),
+                ]}
               />
             </div>
             <div className="form-row">
@@ -376,7 +398,7 @@ export default function ClassesPage() {
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        title="Delete class?"
+        title="Delete section?"
         message={
           deleteTarget
             ? `This permanently deletes Class ${deleteTarget.grade} · ${deleteTarget.section}. This can't be undone - deactivate instead if you just want to hide it temporarily.`
@@ -391,13 +413,24 @@ export default function ClassesPage() {
 
       <ConfirmDialog
         open={bulkDeleteOpen}
-        title={`Delete ${selectedIds.length} classes?`}
-        message="This permanently deletes every selected class. This can't be undone."
+        title={`Delete ${selectedIds.length} section${selectedIds.length === 1 ? '' : 's'}?`}
+        message="This permanently deletes every selected section. This can't be undone."
         confirmLabel="Delete permanently"
         danger
         busy={bulkBusy}
         onConfirm={() => void handleBulkDelete()}
         onCancel={() => setBulkDeleteOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={bulkDeactivateOpen}
+        title={`Deactivate ${selectedIds.length} section${selectedIds.length === 1 ? '' : 's'}?`}
+        message="This hides every selected section from active use. You can reactivate them any time."
+        confirmLabel="Deactivate"
+        danger
+        busy={bulkBusy}
+        onConfirm={() => void handleBulkStatus('DEACTIVATED')}
+        onCancel={() => setBulkDeactivateOpen(false)}
       />
     </div>
   );

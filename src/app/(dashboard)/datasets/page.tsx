@@ -1,17 +1,20 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
-import { DataGrid, type GridColDef } from '@mui/x-data-grid';
+import type { GridColDef } from '@mui/x-data-grid';
 import Switch from '@mui/material/Switch';
 
+import { DataTable } from '@/components/DataTable';
 import { ErrorState, LoadingState } from '@/components/states';
-import { listDatasets, updateDatasets } from '@/lib/api';
+import { getCustomQuestionCollectionsSummary, listDatasets, updateDatasets } from '@/lib/api';
 import { normalizeError } from '@/lib/errors';
 import { useAsyncData } from '@/lib/useAsyncData';
-import type { SchoolDataset } from '@/lib/types';
+import type { CustomQuestionCollectionSummary, SchoolDataset } from '@/lib/types';
 
 export default function DatasetsPage() {
-  const state = useAsyncData(() => listDatasets(), []);
+  const state = useAsyncData('datasets', () => listDatasets());
+  const ownBankState = useAsyncData('own-question-bank-datasets', () => getCustomQuestionCollectionsSummary());
   const [savingId, setSavingId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -51,39 +54,72 @@ export default function DatasetsPage() {
     },
   ];
 
+  const ownBankColumns: GridColDef<CustomQuestionCollectionSummary>[] = [
+    {
+      field: 'collectionName',
+      headerName: 'Name',
+      flex: 1,
+      minWidth: 200,
+      valueGetter: (_value, row) => row.collectionName ?? 'School question bank (no set)',
+    },
+    { field: 'questionCount', headerName: 'Questions', width: 120 },
+    {
+      field: 'actions',
+      headerName: '',
+      width: 160,
+      sortable: false,
+      filterable: false,
+      disableExport: true,
+      renderCell: (params) => (
+        <Link
+          href={params.row.collectionName ? `/question-bank?collection=${encodeURIComponent(params.row.collectionName)}` : '/question-bank'}
+          className="btn white sm"
+        >
+          Manage questions
+        </Link>
+      ),
+    },
+  ];
+
   return (
     <div className="page">
       <div className="page-head">
-        <div>
-          <span className="eyebrow">School</span>
+        <div className="page-head-row">
           <h1>Datasets</h1>
-          <p className="lead">
-            Choose which question banks are available to teachers at this school. Dataset creation
-            and editing is Super Admin&apos;s job (they&apos;re a shared, cross-school catalog) — this
-            page only controls availability here.
-          </p>
         </div>
+        <p className="lead">
+          Choose which question banks are available to teachers at this school. Dataset creation
+          and editing is Super Admin&apos;s job (they&apos;re a shared, cross-school catalog) — this
+          page only controls availability here.
+        </p>
       </div>
 
       {state.status === 'loading' ? <LoadingState label="Loading datasets" /> : null}
       {state.status === 'error' ? <ErrorState onRetry={state.retry} /> : null}
 
       {state.status === 'success' ? (
-        <div className="card" style={{ padding: 0 }}>
-          {saveError ? (
-            <p style={{ color: 'var(--color-red)', margin: '12px 16px 0' }}>{saveError}</p>
-          ) : null}
-          <DataGrid
-            rows={state.data}
-            columns={columns}
-            disableRowSelectionOnClick
-            autoHeight
-            initialState={{
-              pagination: { paginationModel: { pageSize: 10 } },
-            }}
-            pageSizeOptions={[10, 25, 50]}
-          />
-        </div>
+        <>
+          {saveError ? <p style={{ color: 'var(--color-red)', marginBottom: 12 }}>{saveError}</p> : null}
+          <DataTable rows={state.data} columns={columns} />
+        </>
+      ) : null}
+
+      <div className="section-head" style={{ marginTop: 'var(--space-8)', marginBottom: 12 }}>
+        <h3>Your own question bank</h3>
+      </div>
+      <p className="lead" style={{ marginBottom: 16 }}>
+        Every question set you&apos;ve built yourself (from the Question bank page) is, structurally, a
+        dataset too - shown here for visibility. Add or edit questions from the Question bank page itself.
+      </p>
+      {ownBankState.status === 'loading' ? <LoadingState label="Loading your question bank" /> : null}
+      {ownBankState.status === 'error' ? <ErrorState onRetry={ownBankState.retry} /> : null}
+      {ownBankState.status === 'success' && ownBankState.data.length === 0 ? (
+        <p style={{ color: 'var(--color-muted)' }}>
+          No questions of your own yet - add some from the Question bank page.
+        </p>
+      ) : null}
+      {ownBankState.status === 'success' && ownBankState.data.length > 0 ? (
+        <DataTable rows={ownBankState.data} columns={ownBankColumns} getRowId={(row) => row.collectionName ?? '__general__'} />
       ) : null}
     </div>
   );

@@ -34,15 +34,18 @@ const homeworkColumns: GridColDef<SchoolHomework>[] = [
 export default function StudentDetailPage() {
   const { id } = useParams<{ id: string }>();
 
-  const studentsState = useAsyncData(() => listStudents(), []);
-  const classesState = useAsyncData(() => listClasses(), []);
+  // Same cache key ("students:" - no class filter) as the Students list
+  // page's "All classes" view, so arriving here from that list reuses
+  // its cache instead of re-fetching the whole roster.
+  const studentsState = useAsyncData('students:', () => listStudents());
+  const classesState = useAsyncData('classes', () => listClasses());
 
   const student = studentsState.status === 'success' ? studentsState.data.find((s) => s.id === id) : undefined;
   const classes = classesState.status === 'success' ? classesState.data : [];
 
   const homeworkState = useAsyncData(
+    student ? `student-homework:${student.classId}` : null,
     () => listSchoolHomework({ classId: student?.classId, limit: PAGE_SIZE, offset: 0 }),
-    [student?.classId],
   );
 
   function classLabel(classId: string): string {
@@ -77,13 +80,13 @@ export default function StudentDetailPage() {
   return (
     <div className="page">
       <div className="page-head">
-        <div>
-          <Link href="/students" className="lead" style={{ display: 'inline-block', marginBottom: 6 }}>
-            ← Back to Students
-          </Link>
+        <Link href="/students" className="back-link">
+          ← Back to Students
+        </Link>
+        <div className="page-head-row">
           <h1>{student.displayName}</h1>
-          <p className="lead">{student.email}</p>
         </div>
+        <p className="lead">{student.email}</p>
       </div>
 
       <div className="settings-grid" style={{ marginBottom: 24 }}>

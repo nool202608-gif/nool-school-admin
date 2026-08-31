@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
 import type { GridColDef } from '@mui/x-data-grid';
 
 import { DataTable } from '@/components/DataTable';
 import { EmptyState, ErrorState, LoadingState } from '@/components/states';
 import { listSchoolAuditLog } from '@/lib/api';
 import { useAsyncData } from '@/lib/useAsyncData';
+import { useUrlPaginationModel } from '@/lib/useUrlState';
 import type { SchoolAuditLogEntry } from '@/lib/types';
 
 const PAGE_SIZE = 20;
@@ -32,6 +32,13 @@ const columns: GridColDef<SchoolAuditLogEntry>[] = [
     valueGetter: (_value, row) => `${row.targetType} · ${row.targetId.slice(0, 8)}`,
   },
   {
+    field: 'detail',
+    headerName: 'Detail',
+    flex: 1.3,
+    minWidth: 220,
+    valueGetter: (_value, row) => row.detail ?? '—',
+  },
+  {
     field: 'createdAt',
     headerName: 'When',
     width: 190,
@@ -40,17 +47,19 @@ const columns: GridColDef<SchoolAuditLogEntry>[] = [
 ];
 
 export default function SchoolAuditLogPage() {
-  const [offset, setOffset] = useState(0);
-  const state = useAsyncData(() => listSchoolAuditLog({ limit: PAGE_SIZE, offset }), [offset]);
+  const [paginationModel, setPaginationModel] = useUrlPaginationModel(PAGE_SIZE);
+  const state = useAsyncData(
+    `audit-log:${paginationModel.page}:${paginationModel.pageSize}`,
+    () => listSchoolAuditLog({ limit: paginationModel.pageSize, offset: paginationModel.page * paginationModel.pageSize }),
+  );
 
   return (
     <div className="page">
       <div className="page-head">
-        <div>
-          <span className="eyebrow">Activity</span>
+        <div className="page-head-row">
           <h1>Activity log</h1>
-          <p className="lead">Every change made by your school&apos;s own admin accounts.</p>
         </div>
+        <p className="lead">Every change made by your school&apos;s own admin accounts.</p>
       </div>
 
       {state.status === 'loading' ? <LoadingState label="Loading activity" /> : null}
@@ -61,32 +70,14 @@ export default function SchoolAuditLogPage() {
       ) : null}
 
       {state.status === 'success' && state.data.items.length > 0 ? (
-        <>
-          <DataTable rows={state.data.items} columns={columns} pageSize={PAGE_SIZE} />
-          <div className="table-toolbar" style={{ justifyContent: 'space-between' }}>
-            <span className="lead">
-              {offset + 1}–{Math.min(offset + PAGE_SIZE, state.data.total)} of {state.data.total}
-            </span>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button
-                type="button"
-                className="btn white sm"
-                disabled={offset === 0}
-                onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                className="btn white sm"
-                disabled={offset + PAGE_SIZE >= state.data.total}
-                onClick={() => setOffset(offset + PAGE_SIZE)}
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        </>
+        <DataTable
+          rows={state.data.items}
+          columns={columns}
+          server
+          rowCount={state.data.total}
+          paginationModel={paginationModel}
+          onPaginationModelChange={setPaginationModel}
+        />
       ) : null}
     </div>
   );

@@ -22,7 +22,7 @@ export default function Home() {
 
   return (
     <div className="login-shell">
-      <p>Loading…</p>
+      <span className="spinner" aria-hidden="true" />
     </div>
   );
 }

@@ -1,6 +1,13 @@
 'use client';
 
-import { DataGrid, type GridColDef, type GridRowId, type GridRowSelectionModel, type GridValidRowModel } from '@mui/x-data-grid';
+import {
+  DataGrid,
+  type GridColDef,
+  type GridPaginationModel,
+  type GridRowId,
+  type GridRowSelectionModel,
+  type GridValidRowModel,
+} from '@mui/x-data-grid';
 
 /** DataGrid's selection model is include/exclude-relative, not a plain
  * id list - this resolves it against the current rows either way, so
@@ -23,6 +30,12 @@ export const EMPTY_SELECTION: GridRowSelectionModel = { type: 'include', ids: ne
  * into DataGrid's own toolbar via `showToolbar`) and the brand styling
  * (card chrome, row height, empty/loading treatment) stay identical
  * everywhere instead of being re-implemented per page.
+ *
+ * Pagination is always rendered by DataGrid's own footer - never pair
+ * this with a second, hand-rolled Prev/Next control next to it. Pages
+ * backed by a paginated API (limit/offset) pass `server` + `rowCount` so
+ * DataGrid's footer drives the real server-side page instead of only
+ * paging over whatever one page of rows happens to be loaded.
  */
 export function DataTable<T extends GridValidRowModel>({
   rows,
@@ -34,6 +47,10 @@ export function DataTable<T extends GridValidRowModel>({
   onSelectionModelChange,
   pageSize = 10,
   height,
+  server,
+  rowCount,
+  paginationModel,
+  onPaginationModelChange,
 }: {
   rows: T[];
   columns: GridColDef<T>[];
@@ -44,6 +61,11 @@ export function DataTable<T extends GridValidRowModel>({
   onSelectionModelChange?: (model: GridRowSelectionModel) => void;
   pageSize?: number;
   height?: number;
+  /** Server-side pagination mode - the rows prop is just the current page. */
+  server?: boolean;
+  rowCount?: number;
+  paginationModel?: GridPaginationModel;
+  onPaginationModelChange?: (model: GridPaginationModel) => void;
 }) {
   return (
     <div className="table-wrap" style={{ padding: 0 }}>
@@ -58,10 +80,19 @@ export function DataTable<T extends GridValidRowModel>({
         onRowSelectionModelChange={onSelectionModelChange}
         disableRowSelectionOnClick
         {...(height ? { style: { height } } : { autoHeight: true })}
-        initialState={{
-          pagination: { paginationModel: { pageSize } },
-        }}
-        pageSizeOptions={[10, 25, 50, 100]}
+        rowHeight={56}
+        columnHeaderHeight={44}
+        {...(server
+          ? {
+              paginationMode: 'server' as const,
+              rowCount: rowCount ?? 0,
+              paginationModel,
+              onPaginationModelChange,
+            }
+          : {
+              initialState: { pagination: { paginationModel: { pageSize } } },
+            })}
+        pageSizeOptions={[10, 20, 25, 50, 100]}
         density="comfortable"
       />
     </div>

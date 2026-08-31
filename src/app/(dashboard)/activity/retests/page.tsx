@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
 import type { GridColDef } from '@mui/x-data-grid';
 
 import { DataTable } from '@/components/DataTable';
 import { EmptyState, ErrorState, LoadingState } from '@/components/states';
-import { listSchoolImprovement, listSchoolRetestProgress } from '@/lib/api';
+import { listClasses, listSchoolImprovement, listSchoolRetestProgress } from '@/lib/api';
 import { useAsyncData } from '@/lib/useAsyncData';
+import { useUrlPaginationModel, useUrlParam } from '@/lib/useUrlState';
 import type { SchoolImprovement, SchoolRetestProgress } from '@/lib/types';
 
 const PAGE_SIZE = 20;
@@ -57,28 +57,60 @@ const improvementColumns: GridColDef<SchoolImprovement>[] = [
 ];
 
 export default function SchoolRetestsPage() {
-  const [progressOffset, setProgressOffset] = useState(0);
-  const [improvementOffset, setImprovementOffset] = useState(0);
+  const [classFilter, setClassFilter] = useUrlParam('classId', '');
+  const [progressPage, setProgressPage] = useUrlPaginationModel(PAGE_SIZE, 'progress');
+  const [improvementPage, setImprovementPage] = useUrlPaginationModel(PAGE_SIZE, 'improvement');
+  const classesState = useAsyncData('classes', () => listClasses());
 
   const progress = useAsyncData(
-    () => listSchoolRetestProgress({ limit: PAGE_SIZE, offset: progressOffset }),
-    [progressOffset],
+    `retest-progress:${classFilter}:${progressPage.page}:${progressPage.pageSize}`,
+    () =>
+      listSchoolRetestProgress({
+        classId: classFilter || undefined,
+        limit: progressPage.pageSize,
+        offset: progressPage.page * progressPage.pageSize,
+      }),
   );
   const improvement = useAsyncData(
-    () => listSchoolImprovement({ limit: PAGE_SIZE, offset: improvementOffset }),
-    [improvementOffset],
+    `improvement:${classFilter}:${improvementPage.page}:${improvementPage.pageSize}`,
+    () =>
+      listSchoolImprovement({
+        classId: classFilter || undefined,
+        limit: improvementPage.pageSize,
+        offset: improvementPage.page * improvementPage.pageSize,
+      }),
   );
+  const classes = classesState.status === 'success' ? classesState.data : [];
 
   return (
     <div className="page">
       <div className="page-head">
-        <div>
-          <span className="eyebrow">Activity</span>
+        <div className="page-head-row">
           <h1>Retests &amp; Improvement</h1>
-          <p className="lead">
-            How students are progressing through gap-topic Homework and Retests, across the whole school.
-          </p>
         </div>
+        <p className="lead">
+          How students are progressing through gap-topic Homework and Retests, across the whole school.
+        </p>
+      </div>
+
+      <div className="table-toolbar">
+        <select
+          className="field"
+          style={{ maxWidth: 240 }}
+          value={classFilter}
+          onChange={(e) => {
+            setClassFilter(e.target.value);
+            setProgressPage({ page: 0, pageSize: PAGE_SIZE });
+            setImprovementPage({ page: 0, pageSize: PAGE_SIZE });
+          }}
+        >
+          <option value="">All classes</option>
+          {classes.map((c) => (
+            <option key={c.id} value={c.id}>
+              Class {c.grade} · {c.section}
+            </option>
+          ))}
+        </select>
       </div>
 
       <h2 style={{ marginTop: 8, marginBottom: 8 }}>Retest progress</h2>
@@ -88,38 +120,15 @@ export default function SchoolRetestsPage() {
         <EmptyState title="No Retests yet" message="Retest progress for assigned Homework will show up here." />
       ) : null}
       {progress.status === 'success' && progress.data.items.length > 0 ? (
-        <>
-          <DataTable
-            rows={progress.data.items}
-            columns={progressColumns}
-            getRowId={(row) => row.homeworkId}
-            pageSize={PAGE_SIZE}
-          />
-          <div className="table-toolbar" style={{ justifyContent: 'space-between' }}>
-            <span className="lead">
-              {progressOffset + 1}–{Math.min(progressOffset + PAGE_SIZE, progress.data.total)} of{' '}
-              {progress.data.total}
-            </span>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button
-                type="button"
-                className="btn white sm"
-                disabled={progressOffset === 0}
-                onClick={() => setProgressOffset(Math.max(0, progressOffset - PAGE_SIZE))}
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                className="btn white sm"
-                disabled={progressOffset + PAGE_SIZE >= progress.data.total}
-                onClick={() => setProgressOffset(progressOffset + PAGE_SIZE)}
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        </>
+        <DataTable
+          rows={progress.data.items}
+          columns={progressColumns}
+          getRowId={(row) => row.homeworkId}
+          server
+          rowCount={progress.data.total}
+          paginationModel={progressPage}
+          onPaginationModelChange={setProgressPage}
+        />
       ) : null}
 
       <h2 style={{ marginTop: 28, marginBottom: 8 }}>Improvement</h2>
@@ -132,38 +141,15 @@ export default function SchoolRetestsPage() {
         />
       ) : null}
       {improvement.status === 'success' && improvement.data.items.length > 0 ? (
-        <>
-          <DataTable
-            rows={improvement.data.items}
-            columns={improvementColumns}
-            getRowId={(row) => row.homeworkId}
-            pageSize={PAGE_SIZE}
-          />
-          <div className="table-toolbar" style={{ justifyContent: 'space-between' }}>
-            <span className="lead">
-              {improvementOffset + 1}–{Math.min(improvementOffset + PAGE_SIZE, improvement.data.total)} of{' '}
-              {improvement.data.total}
-            </span>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button
-                type="button"
-                className="btn white sm"
-                disabled={improvementOffset === 0}
-                onClick={() => setImprovementOffset(Math.max(0, improvementOffset - PAGE_SIZE))}
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                className="btn white sm"
-                disabled={improvementOffset + PAGE_SIZE >= improvement.data.total}
-                onClick={() => setImprovementOffset(improvementOffset + PAGE_SIZE)}
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        </>
+        <DataTable
+          rows={improvement.data.items}
+          columns={improvementColumns}
+          getRowId={(row) => row.homeworkId}
+          server
+          rowCount={improvement.data.total}
+          paginationModel={improvementPage}
+          onPaginationModelChange={setImprovementPage}
+        />
       ) : null}
     </div>
   );

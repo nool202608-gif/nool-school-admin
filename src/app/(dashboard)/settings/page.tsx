@@ -3,16 +3,66 @@
 import { useEffect, useState } from 'react';
 import { updatePassword } from 'firebase/auth';
 
+import { PasswordStrengthMeter } from '@/components/PasswordStrengthMeter';
 import { ErrorState, LoadingState } from '@/components/states';
 import { useToast } from '@/components/Toast';
-import { getSchoolAdminMe, updateSchoolAdminMe } from '@/lib/api';
+import { getSchoolAdminMe, getSchoolLogo, updateSchoolAdminMe, updateSchoolLogo } from '@/lib/api';
 import { getFirebaseAuth } from '@/lib/firebase';
 import { normalizeError } from '@/lib/errors';
+import { isPasswordValid } from '@/lib/passwordPolicy';
 import { useAsyncData } from '@/lib/useAsyncData';
 
+const MAX_LOGO_BYTES = 1_500_000;
+
+function readFileAsDataUri(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function SettingsPage() {
-  const state = useAsyncData(() => getSchoolAdminMe(), []);
+  const state = useAsyncData('me', () => getSchoolAdminMe());
+  const logoState = useAsyncData('school-logo', () => getSchoolLogo());
   const { show } = useToast();
+
+  const [logoBusy, setLogoBusy] = useState(false);
+
+  async function handleLogoFileSelected(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (file.size > MAX_LOGO_BYTES) {
+      show(`That image is too large (max ${Math.round(MAX_LOGO_BYTES / 1_000_000)}MB).`, 'error');
+      return;
+    }
+    setLogoBusy(true);
+    try {
+      const dataUri = await readFileAsDataUri(file);
+      await updateSchoolLogo(dataUri);
+      if (logoState.status === 'success') logoState.refetch();
+      show('Logo updated.', 'success');
+    } catch (cause) {
+      show(normalizeError(cause).message, 'error');
+    } finally {
+      setLogoBusy(false);
+    }
+  }
+
+  async function handleLogoRemove() {
+    setLogoBusy(true);
+    try {
+      await updateSchoolLogo(null);
+      if (logoState.status === 'success') logoState.refetch();
+      show('Logo removed.', 'success');
+    } catch (cause) {
+      show(normalizeError(cause).message, 'error');
+    } finally {
+      setLogoBusy(false);
+    }
+  }
 
   const [displayName, setDisplayName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -33,8 +83,7 @@ export default function SettingsPage() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
 
   const mismatch = confirmPassword.length > 0 && newPassword !== confirmPassword;
-  const tooShort = newPassword.length > 0 && newPassword.length < 8;
-  const canSubmitPassword = newPassword.length >= 8 && newPassword === confirmPassword && !passwordSubmitting;
+  const canSubmitPassword = isPasswordValid(newPassword) && newPassword === confirmPassword && !passwordSubmitting;
 
   async function handleProfileSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -79,11 +128,10 @@ export default function SettingsPage() {
   return (
     <div className="page">
       <div className="page-head">
-        <div>
-          <span className="eyebrow">Account</span>
+        <div className="page-head-row">
           <h1>Settings</h1>
-          <p className="lead">Your own profile and sign-in details for this console.</p>
         </div>
+        <p className="lead">Your own profile and sign-in details for this console.</p>
       </div>
 
       {state.status === 'loading' ? <LoadingState label="Loading your profile" /> : null}
@@ -143,6 +191,7 @@ export default function SettingsPage() {
                   required
                 />
               </div>
+              <PasswordStrengthMeter password={newPassword} />
               <div className="form-row">
                 <label htmlFor="settings-confirm-password">Confirm new password</label>
                 <input
@@ -155,7 +204,6 @@ export default function SettingsPage() {
                   required
                 />
               </div>
-              {tooShort ? <p style={{ color: 'var(--color-red)' }}>Must be at least 8 characters.</p> : null}
               {mismatch ? <p style={{ color: 'var(--color-red)' }}>Passwords don&apos;t match.</p> : null}
               {passwordError ? <p style={{ color: 'var(--color-red)' }}>{passwordError}</p> : null}
               <button
@@ -167,6 +215,65 @@ export default function SettingsPage() {
                 {passwordSubmitting ? 'Updating…' : 'Update password'}
               </button>
             </form>
+          </div>
+
+          <div className="card">
+            <h3 style={{ marginBottom: 4 }}>School logo</h3>
+            <p className="lead" style={{ marginBottom: 16 }}>
+              Shown wherever {state.data.schoolName}&apos;s identity appears across the platform.
+            </p>
+            {logoState.status === 'loading' ? <LoadingState label="Loading logo" /> : null}
+            {logoState.status === 'error' ? <ErrorState onRetry={logoState.retry} /> : null}
+            {logoState.status === 'success' ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div
+                  style={{
+                    width: 64,
+                    height: 64,
+                    borderRadius: 10,
+                    border: '1px solid var(--color-line)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    overflow: 'hidden',
+                    flexShrink: 0,
+                  }}
+                >
+                  {logoState.data.logoDataUri ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={logoState.data.logoDataUri}
+                      alt={`${state.data.schoolName} logo`}
+                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                    />
+                  ) : (
+                    <span style={{ color: 'var(--color-muted-2)', fontSize: 11 }}>No logo</span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <label className="btn white sm" style={{ cursor: 'pointer' }}>
+                    {logoBusy ? 'Uploading…' : logoState.data.logoDataUri ? 'Replace' : 'Upload'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleLogoFileSelected}
+                      disabled={logoBusy}
+                      style={{ display: 'none' }}
+                    />
+                  </label>
+                  {logoState.data.logoDataUri ? (
+                    <button
+                      type="button"
+                      className="btn white sm"
+                      disabled={logoBusy}
+                      onClick={() => void handleLogoRemove()}
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

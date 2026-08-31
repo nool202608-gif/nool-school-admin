@@ -137,6 +137,13 @@ export const SparkleIcon = (p: SVGProps<SVGSVGElement>) => (
   </Base>
 );
 
+export const BellIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Base {...p}>
+    <path d="M6 8.5a6 6 0 1 1 12 0c0 4.2 1.5 5.7 2 6.5H4c.5-.8 2-2.3 2-6.5Z" />
+    <path d="M10 19a2 2 0 0 0 4 0" />
+  </Base>
+);
+
 export const XIcon = (p: SVGProps<SVGSVGElement>) => (
   <Base {...p}>
     <path d="M6 6l12 12M18 6L6 18" />

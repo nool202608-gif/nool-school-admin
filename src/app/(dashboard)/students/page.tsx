@@ -28,6 +28,7 @@ import {
 } from '@/lib/api';
 import { normalizeError } from '@/lib/errors';
 import { useAsyncData } from '@/lib/useAsyncData';
+import { useUrlParam } from '@/lib/useUrlState';
 import type { SchoolStudent, UserStatus } from '@/lib/types';
 
 interface StudentCredential {
@@ -38,9 +39,9 @@ interface StudentCredential {
 }
 
 export default function StudentsPage() {
-  const [classFilter, setClassFilter] = useState<string>('');
-  const classesState = useAsyncData(() => listClasses(), []);
-  const studentsState = useAsyncData(() => listStudents(classFilter || undefined), [classFilter]);
+  const [classFilter, setClassFilter] = useUrlParam('classId', '');
+  const classesState = useAsyncData('classes', () => listClasses());
+  const studentsState = useAsyncData(`students:${classFilter}`, () => listStudents(classFilter || undefined));
   const { show } = useToast();
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -74,6 +75,7 @@ export default function StudentsPage() {
   const [deleteTarget, setDeleteTarget] = useState<SchoolStudent | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeactivateOpen, setBulkDeactivateOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [selection, setSelection] = useState<GridRowSelectionModel>(EMPTY_SELECTION);
 
@@ -243,6 +245,7 @@ export default function StudentsPage() {
       await Promise.all(selectedIds.map((id) => updateStudent(String(id), { status: next })));
       show(`${selectedIds.length} student${selectedIds.length === 1 ? '' : 's'} updated.`, 'success');
       setSelection(EMPTY_SELECTION);
+      setBulkDeactivateOpen(false);
       if (studentsState.status === 'success') studentsState.refetch();
     } catch (cause) {
       show(normalizeError(cause).message, 'error');
@@ -256,25 +259,25 @@ export default function StudentsPage() {
       field: 'displayName',
       headerName: 'Name',
       flex: 1,
-      minWidth: 180,
+      minWidth: 160,
       renderCell: (params) => (
         <Link href={`/students/${params.row.id}`} className="table-link">
           {params.row.displayName}
         </Link>
       ),
     },
-    { field: 'email', headerName: 'Email', flex: 1.2, minWidth: 220 },
+    { field: 'email', headerName: 'Email', flex: 1.2, minWidth: 200 },
     {
       field: 'classId',
       headerName: 'Class',
-      width: 140,
+      width: 130,
       valueGetter: (_value, row) => classLabel(row.classId),
     },
-    { field: 'rollNumber', headerName: 'Roll #', width: 90 },
+    { field: 'rollNumber', headerName: 'Roll #', width: 80 },
     {
       field: 'guardianName',
       headerName: 'Guardian',
-      width: 160,
+      width: 140,
       valueGetter: (_value, row) => row.guardianName ?? '—',
     },
     {
@@ -322,22 +325,21 @@ export default function StudentsPage() {
   return (
     <div className="page">
       <div className="page-head">
-        <div>
-          <span className="eyebrow">Roster</span>
+        <div className="page-head-row">
           <h1>Students</h1>
-          <p className="lead">Add students and manage their class assignment.</p>
+          <div className="page-head-actions">
+            <button type="button" className="btn white" disabled={exporting} onClick={() => void handleExport()}>
+              <DownloadIcon /> {exporting ? 'Exporting…' : 'Export roster'}
+            </button>
+            <button type="button" className="btn white" onClick={() => setBulkOpen(true)}>
+              <UploadIcon /> Bulk upload
+            </button>
+            <button type="button" className="btn yellow" onClick={() => setCreateOpen(true)}>
+              <PlusIcon /> Add student
+            </button>
+          </div>
         </div>
-        <div className="page-head-actions">
-          <button type="button" className="btn white" disabled={exporting} onClick={() => void handleExport()}>
-            <DownloadIcon /> {exporting ? 'Exporting…' : 'Export roster'}
-          </button>
-          <button type="button" className="btn white" onClick={() => setBulkOpen(true)}>
-            <UploadIcon /> Bulk upload
-          </button>
-          <button type="button" className="btn yellow" onClick={() => setCreateOpen(true)}>
-            <PlusIcon /> Add student
-          </button>
-        </div>
+        <p className="lead">Add students and manage their class assignment.</p>
       </div>
 
       <div className="table-toolbar">
@@ -369,7 +371,7 @@ export default function StudentsPage() {
             <button type="button" className="btn white sm" disabled={bulkBusy} onClick={() => void handleBulkStatus('ACTIVE')}>
               <CheckCircleIcon /> Activate
             </button>
-            <button type="button" className="btn white sm" disabled={bulkBusy} onClick={() => void handleBulkStatus('DEACTIVATED')}>
+            <button type="button" className="btn white sm" disabled={bulkBusy} onClick={() => setBulkDeactivateOpen(true)}>
               <BanIcon /> Deactivate
             </button>
             <button type="button" className="btn danger sm" disabled={bulkBusy} onClick={() => setBulkDeleteOpen(true)}>
@@ -604,13 +606,24 @@ export default function StudentsPage() {
 
       <ConfirmDialog
         open={bulkDeleteOpen}
-        title={`Delete ${selectedIds.length} students?`}
+        title={`Delete ${selectedIds.length} student${selectedIds.length === 1 ? '' : 's'}?`}
         message="This permanently deletes every selected student's account. This can't be undone."
         confirmLabel="Delete permanently"
         danger
         busy={bulkBusy}
         onConfirm={() => void handleBulkDelete()}
         onCancel={() => setBulkDeleteOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={bulkDeactivateOpen}
+        title={`Deactivate ${selectedIds.length} student${selectedIds.length === 1 ? '' : 's'}?`}
+        message="This immediately revokes access for every selected student. You can reactivate them any time."
+        confirmLabel="Deactivate"
+        danger
+        busy={bulkBusy}
+        onConfirm={() => void handleBulkStatus('DEACTIVATED')}
+        onCancel={() => setBulkDeactivateOpen(false)}
       />
 
       <BulkUploadModal

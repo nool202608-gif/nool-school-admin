@@ -11,17 +11,25 @@ import {
   TrendingUpIcon,
   UsersIcon,
 } from '@/components/Icon';
+import { OnboardingChecklist } from '@/components/OnboardingChecklist';
 import {
   getAnalytics,
+  getCurriculum,
   getSchoolLeaderboard,
   getSubscription,
   listClasses,
   listSchoolAuditLog,
+  listSchoolQuestionBank,
   listSchoolVoiceTests,
   listStudents,
   listTeachers,
 } from '@/lib/api';
 import { useAsyncData } from '@/lib/useAsyncData';
+
+/** A plan limit is "near" once usage crosses this fraction - the nudge
+ * exists to prompt an upgrade conversation before the admin hits a hard
+ * 409 mid-task (inviting a teacher, adding a student), not after. */
+const NEAR_LIMIT_THRESHOLD = 0.9;
 
 const BLOOM_LABEL: Record<string, string> = {
   REMEMBER: 'Remember',
@@ -44,14 +52,16 @@ function relativeTime(iso: string): string {
 }
 
 export default function DashboardPage() {
-  const teachersState = useAsyncData(() => listTeachers(), []);
-  const studentsState = useAsyncData(() => listStudents(), []);
-  const classesState = useAsyncData(() => listClasses(), []);
-  const analyticsState = useAsyncData(() => getAnalytics(), []);
-  const subscriptionState = useAsyncData(() => getSubscription(), []);
-  const leaderboardState = useAsyncData(() => getSchoolLeaderboard({ limit: 5, offset: 0 }), []);
-  const auditState = useAsyncData(() => listSchoolAuditLog({ limit: 6, offset: 0 }), []);
-  const testsState = useAsyncData(() => listSchoolVoiceTests({ limit: 5, offset: 0 }), []);
+  const teachersState = useAsyncData('teachers', () => listTeachers());
+  const studentsState = useAsyncData('students:', () => listStudents());
+  const classesState = useAsyncData('classes', () => listClasses());
+  const analyticsState = useAsyncData('analytics', () => getAnalytics());
+  const subscriptionState = useAsyncData('subscription', () => getSubscription());
+  const leaderboardState = useAsyncData('dashboard-leaderboard', () => getSchoolLeaderboard({ limit: 5, offset: 0 }));
+  const auditState = useAsyncData('dashboard-audit-log', () => listSchoolAuditLog({ limit: 6, offset: 0 }));
+  const testsState = useAsyncData('dashboard-voice-tests', () => listSchoolVoiceTests({ limit: 5, offset: 0 }));
+  const questionBankState = useAsyncData('dashboard-question-bank-count', () => listSchoolQuestionBank({ limit: 1, offset: 0 }));
+  const curriculumState = useAsyncData('curriculum', () => getCurriculum());
 
   const teachers = teachersState.status === 'success' ? teachersState.data : [];
   const students = studentsState.status === 'success' ? studentsState.data : [];
@@ -65,15 +75,66 @@ export default function DashboardPage() {
     teachersState.status === 'loading' || studentsState.status === 'loading' || classesState.status === 'loading';
   const anyCoreError = teachersState.status === 'error' || studentsState.status === 'error' || classesState.status === 'error';
 
+  const subscription = subscriptionState.status === 'success' ? subscriptionState.data : null;
+  const nearLimitMeters = subscription
+    ? [
+        { label: 'teachers', used: subscription.teacherCount, limit: subscription.teacherLimit },
+        { label: 'students', used: subscription.studentCount, limit: subscription.studentLimit },
+      ].filter((m) => m.limit > 0 && m.used / m.limit >= NEAR_LIMIT_THRESHOLD)
+    : [];
+
+  const hasEnabledSubject =
+    curriculumState.status === 'success' && curriculumState.data.subjects.some((s) => s.enabled);
+  const onboardingSteps = [
+    {
+      label: 'Enable your subjects',
+      description: 'Choose which subjects this school teaches.',
+      href: '/curriculum',
+      done: hasEnabledSubject,
+    },
+    {
+      label: 'Create your first class',
+      description: 'Set up a grade and section for your roster.',
+      href: '/classes',
+      done: classes.length > 0,
+    },
+    {
+      label: 'Invite a teacher',
+      description: 'Give a teacher access to their classes.',
+      href: '/teachers',
+      done: teachers.length > 0,
+    },
+    {
+      label: 'Add a student',
+      description: 'Add your first student to a class.',
+      href: '/students',
+      done: students.length > 0,
+    },
+  ];
+
   return (
     <div className="page">
       <div className="page-head">
-        <div>
-          <span className="eyebrow">Overview</span>
+        <div className="page-head-row">
           <h1>Dashboard</h1>
-          <p className="lead">A snapshot of teachers, students, classes, and performance across your school.</p>
         </div>
+        <p className="lead">A snapshot of teachers, students, classes, and performance across your school.</p>
       </div>
+
+      {nearLimitMeters.length > 0 ? (
+        <div className="upsell-banner">
+          <AlertIcon />
+          <span>
+            You&apos;re close to your plan&apos;s limit on {nearLimitMeters.map((m) => m.label).join(' and ')} -
+            reach out to your account team before it blocks adding more.
+          </span>
+          <Link href="/subscription" className="btn dark sm">
+            View plan
+          </Link>
+        </div>
+      ) : null}
+
+      {!anyCoreLoading && !anyCoreError ? <OnboardingChecklist steps={onboardingSteps} /> : null}
 
       {anyCoreLoading ? <LoadingState label="Loading dashboard" /> : null}
       {anyCoreError ? (
@@ -115,6 +176,12 @@ export default function DashboardPage() {
               </strong>
               <small>Across all assessed classes</small>
             </div>
+            <Link href="/question-bank" className="insight-card">
+              <div className="insight-icon"><BookIcon /></div>
+              <small>Question bank</small>
+              <strong>{questionBankState.status === 'success' ? questionBankState.data.total : '—'}</strong>
+              <small>Questions generated, ready to reuse</small>
+            </Link>
           </div>
 
           <div className="dashboard-columns">

@@ -1,10 +1,11 @@
+/** The one loading indicator used everywhere - a table mid-fetch, a
+ * card of stats, a detail page. A centered branded spinner reads as "this
+ * region is loading" regardless of context, unlike the old left-aligned
+ * skeleton bars, which looked like stray content rather than a state. */
 export function LoadingState({ label }: { label: string }) {
   return (
-    <div>
-      <div className="skeleton-row" style={{ width: '40%' }} />
-      <div className="skeleton-row" />
-      <div className="skeleton-row" style={{ width: '70%' }} />
-      <span className="sr-only">{label}</span>
+    <div className="loading-state" role="status" aria-label={label}>
+      <span className="spinner" aria-hidden="true" />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import useSWR from 'swr';
 import { type AppError, normalizeError } from './errors';
 
 export type AsyncDataState<T> =
@@ -9,36 +9,35 @@ export type AsyncDataState<T> =
   | { status: 'success'; data: T; refetch: () => void };
 
 /**
- * Fetches `fetcher()` whenever `deps` changes, or `retry`/`refetch` is
- * called (tracked via a version counter, bumped on demand, rather than a
- * ref mutated during render - React Compiler's stricter hook rules flag
- * the latter even though it's otherwise safe).
+ * Thin wrapper around SWR so every call site keeps the same {status,...}
+ * shape it always had, but now backed by a real cross-navigation cache -
+ * revisiting a page you fetched a moment ago shows the last-good data
+ * immediately (no loading flash) while SWR silently revalidates behind
+ * it, instead of every navigation re-fetching from a blank slate.
+ *
+ * `key` is the cache identity - include every value the fetch actually
+ * depends on (e.g. `students:${classFilter}`), the same way a dependency
+ * array used to. Two call sites that pass the same key share one cache
+ * entry (and one in-flight request) - that's a feature, not a collision,
+ * as long as the key really does capture everything the result depends
+ * on. Pass `null` to skip fetching entirely (e.g. while a required id
+ * isn't known yet).
  */
-export function useAsyncData<T>(fetcher: () => Promise<T>, deps: unknown[]): AsyncDataState<T> {
-  const [state, setState] = useState<AsyncDataState<T>>({ status: 'loading' });
-  const [version, setVersion] = useState(0);
-  const retry = () => setVersion((v) => v + 1);
+export function useAsyncData<T>(key: string | null, fetcher: () => Promise<T>): AsyncDataState<T> {
+  const { data, error, isLoading, mutate } = useSWR<T>(key, fetcher, {
+    revalidateOnFocus: false,
+    shouldRetryOnError: false,
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- this effect *is* the data fetch; resetting to 'loading' when deps/version change is the intended behavior, not a render-derived value.
-    setState({ status: 'loading' });
+  const retry = () => {
+    void mutate();
+  };
 
-    fetcher()
-      .then((data) => {
-        if (cancelled) return;
-        setState({ status: 'success', data, refetch: retry });
-      })
-      .catch((cause: unknown) => {
-        if (cancelled) return;
-        setState({ status: 'error', error: normalizeError(cause), retry });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `deps` is the caller-controlled dependency list; `version` forces a re-run on retry/refetch.
-  }, [...deps, version]);
-
-  return state;
+  if (error) {
+    return { status: 'error', error: normalizeError(error), retry };
+  }
+  if (isLoading || data === undefined) {
+    return { status: 'loading' };
+  }
+  return { status: 'success', data, refetch: retry };
 }

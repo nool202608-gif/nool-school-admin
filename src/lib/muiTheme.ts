@@ -70,8 +70,15 @@ export const muiTheme = createTheme({
           '& .MuiDataGrid-menuIconButton': {
             color: muted,
           },
-          // Rows/cells
+          // Rows/cells - explicit flex + a reset line-height so custom
+          // renderCell content (status tags, action icon rows) can't
+          // inherit the cell's own text-centering line-height and blow up
+          // in size (inline-flex elements pick up an inherited line-height
+          // as a height contribution - bit us once already).
           '& .MuiDataGrid-cell': {
+            display: 'flex',
+            alignItems: 'center',
+            lineHeight: 'normal',
             padding: '0 20px',
             outline: 'none !important',
           },

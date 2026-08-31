@@ -6,6 +6,7 @@ import { onAuthStateChanged, signInWithCustomToken, signOut as firebaseSignOut, 
 import { getFirebaseAuth } from './firebase';
 import { apiRequest, login } from './apiClient';
 import { AppError, AuthError, normalizeError } from './errors';
+import type { Feature } from './types';
 
 export interface Profile {
   id: string;
@@ -14,6 +15,9 @@ export interface Profile {
   school: string;
   /** See src/app/change-password/page.tsx, which this gates. */
   mustChangePassword: boolean;
+  /** null = every feature enabled (no plan restriction) - see Sidebar.tsx's
+   * NAV_GROUPS filtering, the only consumer of this field. */
+  enabledFeatures: Feature[] | null;
 }
 
 interface MeResponse {
@@ -73,7 +77,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setStatus('authenticated');
     } catch (cause) {
       if (!activeRef.current) return;
-      setError(normalizeError(cause));
+      const appError = normalizeError(cause);
+      // An expired/invalid session (401) is not "no profile exists" - that
+      // message ("contact your platform administrator") is actively wrong
+      // for what's really a stale token. Sign out and let the normal
+      // signedOut -> /login redirect handle it instead.
+      if (appError instanceof AuthError) {
+        setError(appError);
+        void firebaseSignOut(getFirebaseAuth());
+        return;
+      }
+      setError(appError);
       setStatus('noProfile');
     }
   }, []);

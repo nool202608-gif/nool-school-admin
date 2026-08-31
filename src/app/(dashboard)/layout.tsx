@@ -3,6 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
+import { Footer } from '@/components/Footer';
+import { PullToRefresh } from '@/components/PullToRefresh';
 import { Sidebar } from '@/components/Sidebar';
 import { useAuth } from '@/lib/useAuth';
 
@@ -27,7 +29,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   ) {
     return (
       <div className="login-shell">
-        <p>Loading…</p>
+        <span className="spinner" aria-hidden="true" />
       </div>
     );
   }
@@ -48,6 +50,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             Sign out
           </button>
         </div>
+        <Footer />
       </div>
     );
   }
@@ -68,14 +71,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             Sign out
           </button>
         </div>
+        <Footer />
       </div>
     );
   }
 
   return (
-    <div className="app-shell">
-      <Sidebar />
-      <div className="main">{children}</div>
-    </div>
+    <PullToRefresh>
+      <div className="app-shell">
+        <Sidebar />
+        <div className="main">
+          {children}
+          <Footer />
+        </div>
+      </div>
+    </PullToRefresh>
   );
 }

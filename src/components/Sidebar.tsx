@@ -4,7 +4,11 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { SVGProps } from 'react';
 
+import { NotificationsBell } from './NotificationsBell';
+import { getSchoolLogo } from '@/lib/api';
+import { useAsyncData } from '@/lib/useAsyncData';
 import { useAuth } from '@/lib/useAuth';
+import type { Feature } from '@/lib/types';
 
 /** Minimal inline line icons - kept dependency-free rather than adding
  * lucide-react for six glyphs. Stroke-based, 16px, matches Strapi's icon
@@ -47,6 +51,13 @@ const ICONS: Record<string, React.ReactNode> = {
       <path d="M3 9h18" />
     </Icon>
   ),
+  grades: (
+    <Icon>
+      <rect x="4" y="3" width="16" height="7" rx="1.5" />
+      <rect x="4" y="14" width="16" height="7" rx="1.5" />
+      <path d="M8 6.5h8M8 17.5h8" />
+    </Icon>
+  ),
   curriculum: (
     <Icon>
       <path d="M4 5.5A2 2 0 0 1 6 4h13v14H6a2 2 0 0 0-2 2V5.5Z" />
@@ -65,6 +76,13 @@ const ICONS: Record<string, React.ReactNode> = {
       <path d="M4 20V10" />
       <path d="M11 20V4" />
       <path d="M18 20v-7" />
+    </Icon>
+  ),
+  reports: (
+    <Icon>
+      <path d="M6 3h9l4 4v14H6V3Z" />
+      <path d="M9 12h6M9 16h6" />
+      <path d="M9 8h2" />
     </Icon>
   ),
   subscription: (
@@ -117,6 +135,13 @@ const ICONS: Record<string, React.ReactNode> = {
       <circle cx="12" cy="12" r="9" />
     </Icon>
   ),
+  support: (
+    <Icon>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 16v.01" />
+      <path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.9.4-1.5 1-1.5 2.2" />
+    </Icon>
+  ),
   settings: (
     <Icon>
       <circle cx="12" cy="12" r="3" />
@@ -134,39 +159,66 @@ const ICONS_EXTRA: Record<string, React.ReactNode> = {
       <rect x="3" y="13" width="8" height="8" rx="1.5" />
     </Icon>
   ),
+  'question-bank': (
+    <Icon>
+      <path d="M4 19.5V5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5a2.5 2.5 0 0 0 0 5H20" />
+      <path d="M9 8.5c0-1.4 1.1-2.5 2.6-2.5 1.4 0 2.4.9 2.4 2.1 0 1-.6 1.5-1.5 2.1-.8.5-1.3 1-1.3 1.8" />
+      <circle cx="11.5" cy="15" r="0.6" fill="currentColor" />
+    </Icon>
+  ),
+  'sign-out': (
+    <Icon>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="M16 17l5-5-5-5" />
+      <path d="M21 12H9" />
+    </Icon>
+  ),
 };
 Object.assign(ICONS, ICONS_EXTRA);
 
 const TOP_LINKS = [{ href: '/dashboard', label: 'Dashboard', icon: 'dashboard' }];
 
-const NAV_GROUPS = [
+interface NavItem {
+  href: string;
+  label: string;
+  icon: string;
+  /** Gates this item on Profile.enabledFeatures - omitted for items with no
+   * corresponding Feature (always shown regardless of plan). */
+  feature?: Feature;
+}
+
+const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   {
     label: 'Roster',
     items: [
       { href: '/teachers', label: 'Teachers', icon: 'teachers' },
       { href: '/students', label: 'Students', icon: 'students' },
-      { href: '/classes', label: 'Classes', icon: 'classes' },
+      { href: '/grades', label: 'Classes', icon: 'grades' },
+      { href: '/classes', label: 'Sections', icon: 'classes' },
     ],
   },
   {
     label: 'Activity',
     items: [
-      { href: '/activity/tests', label: 'Voice Tests', icon: 'tests' },
-      { href: '/activity/homework', label: 'Homework', icon: 'homework' },
-      { href: '/activity/question-papers', label: 'Question Papers', icon: 'question-papers' },
-      { href: '/activity/retests', label: 'Retests & Improvement', icon: 'retests' },
-      { href: '/activity/leaderboard', label: 'Leaderboard', icon: 'leaderboard' },
+      { href: '/activity/tests', label: 'Voice Tests', icon: 'tests', feature: 'voice_test' },
+      { href: '/activity/homework', label: 'Homework', icon: 'homework', feature: 'homework' },
+      { href: '/activity/question-papers', label: 'Question Papers', icon: 'question-papers', feature: 'question_paper' },
+      { href: '/activity/retests', label: 'Retests & Improvement', icon: 'retests', feature: 'improvement_analysis' },
+      { href: '/activity/leaderboard', label: 'Leaderboard', icon: 'leaderboard', feature: 'leaderboard' },
       { href: '/activity/audit-log', label: 'Activity log', icon: 'audit-log' },
     ],
   },
   {
     label: 'School',
     items: [
-      { href: '/curriculum', label: 'Curriculum', icon: 'curriculum' },
+      { href: '/curriculum', label: 'Subject', icon: 'curriculum' },
       { href: '/datasets', label: 'Datasets', icon: 'datasets' },
+      { href: '/question-bank', label: 'Question bank', icon: 'question-bank' },
       { href: '/question-defaults', label: 'Question defaults', icon: 'question-defaults' },
       { href: '/analytics', label: 'Analytics', icon: 'analytics' },
+      { href: '/reports', label: 'Reports', icon: 'reports' },
       { href: '/subscription', label: 'Subscription', icon: 'subscription' },
+      { href: '/support', label: 'Support', icon: 'support' },
     ],
   },
 ];
@@ -182,41 +234,65 @@ function initialsFor(name: string): string {
 export function Sidebar() {
   const pathname = usePathname();
   const { profile, signOut } = useAuth();
+  const logoState = useAsyncData('school-logo', () => getSchoolLogo());
+  const logoDataUri = logoState.status === 'success' ? logoState.data.logoDataUri : null;
+
+  // null enabledFeatures = every feature enabled (no plan restriction) -
+  // same convention as the Plan.enabled_features field it's derived from.
+  const enabledFeatures = profile?.enabledFeatures ?? null;
+  const visibleNavGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => !item.feature || !enabledFeatures || enabledFeatures.includes(item.feature)),
+  })).filter((group) => group.items.length > 0);
 
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        nool<span>.</span> school
+        <span className="sidebar-brand-mark">
+          nool<span>.</span>
+        </span>
+        <span className="sidebar-brand-label"> school</span>
+        {logoDataUri ? (
+          // eslint-disable-next-line @next/next/no-img-element -- a user-uploaded data: URI, not a static asset next/image can optimize.
+          <img src={logoDataUri} alt="School logo" className="sidebar-school-logo" />
+        ) : null}
       </div>
       <nav className="sidebar-nav">
         {TOP_LINKS.map((item) => (
           <Link
             key={item.href}
             href={item.href}
+            title={item.label}
             className={`sidebar-link${pathname === item.href ? ' active' : ''}`}
           >
             {ICONS[item.icon]}
-            {item.label}
+            <span className="sidebar-link-label">{item.label}</span>
           </Link>
         ))}
-        {NAV_GROUPS.map((group) => (
+        {visibleNavGroups.map((group) => (
           <div key={group.label}>
             <div className="sidebar-section-label">{group.label}</div>
             {group.items.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
+                title={item.label}
                 className={`sidebar-link${pathname.startsWith(item.href) ? ' active' : ''}`}
               >
                 {ICONS[item.icon]}
-                {item.label}
+                <span className="sidebar-link-label">{item.label}</span>
               </Link>
             ))}
           </div>
         ))}
       </nav>
       <div className="sidebar-foot">
-        <Link href="/settings" className={`sidebar-user${pathname.startsWith('/settings') ? ' active' : ''}`}>
+        <NotificationsBell />
+        <Link
+          href="/settings"
+          title="Settings"
+          className={`sidebar-user${pathname.startsWith('/settings') ? ' active' : ''}`}
+        >
           <div className="avatar">{initialsFor(profile?.displayName ?? '?')}</div>
           <div className="grow">
             <strong>{profile?.displayName ?? 'School Admin'}</strong>
@@ -224,8 +300,9 @@ export function Sidebar() {
           </div>
           {ICONS.settings}
         </Link>
-        <button type="button" className="sidebar-signout" onClick={() => void signOut()}>
-          Sign out
+        <button type="button" className="sidebar-signout" title="Sign out" onClick={() => void signOut()}>
+          {ICONS['sign-out']}
+          <span className="sidebar-link-label">Sign out</span>
         </button>
       </div>
     </aside>

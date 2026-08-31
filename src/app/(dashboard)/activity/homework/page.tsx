@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
 import type { GridColDef } from '@mui/x-data-grid';
 
 import { DataTable } from '@/components/DataTable';
 import { EmptyState, ErrorState, LoadingState } from '@/components/states';
-import { listSchoolHomework } from '@/lib/api';
+import { listClasses, listSchoolHomework } from '@/lib/api';
 import { useAsyncData } from '@/lib/useAsyncData';
+import { useUrlPaginationModel, useUrlParam } from '@/lib/useUrlState';
 import type { HomeworkStatus, SchoolHomework } from '@/lib/types';
 
 const PAGE_SIZE = 20;
@@ -44,17 +44,46 @@ const columns: GridColDef<SchoolHomework>[] = [
 ];
 
 export default function SchoolHomeworkPage() {
-  const [offset, setOffset] = useState(0);
-  const state = useAsyncData(() => listSchoolHomework({ limit: PAGE_SIZE, offset }), [offset]);
+  const [classFilter, setClassFilter] = useUrlParam('classId', '');
+  const [paginationModel, setPaginationModel] = useUrlPaginationModel(PAGE_SIZE);
+  const classesState = useAsyncData('classes', () => listClasses());
+  const state = useAsyncData(
+    `homework:${classFilter}:${paginationModel.page}:${paginationModel.pageSize}`,
+    () =>
+      listSchoolHomework({
+        classId: classFilter || undefined,
+        limit: paginationModel.pageSize,
+        offset: paginationModel.page * paginationModel.pageSize,
+      }),
+  );
+  const classes = classesState.status === 'success' ? classesState.data : [];
 
   return (
     <div className="page">
       <div className="page-head">
-        <div>
-          <span className="eyebrow">Activity</span>
+        <div className="page-head-row">
           <h1>Homework</h1>
-          <p className="lead">Homework assigned across the school, by any teacher.</p>
         </div>
+        <p className="lead">Homework assigned across the school, by any teacher.</p>
+      </div>
+
+      <div className="table-toolbar">
+        <select
+          className="field"
+          style={{ maxWidth: 240 }}
+          value={classFilter}
+          onChange={(e) => {
+            setClassFilter(e.target.value);
+            setPaginationModel({ page: 0, pageSize: PAGE_SIZE });
+          }}
+        >
+          <option value="">All classes</option>
+          {classes.map((c) => (
+            <option key={c.id} value={c.id}>
+              Class {c.grade} · {c.section}
+            </option>
+          ))}
+        </select>
       </div>
 
       {state.status === 'loading' ? <LoadingState label="Loading homework" /> : null}
@@ -65,32 +94,14 @@ export default function SchoolHomeworkPage() {
       ) : null}
 
       {state.status === 'success' && state.data.items.length > 0 ? (
-        <>
-          <DataTable rows={state.data.items} columns={columns} pageSize={PAGE_SIZE} />
-          <div className="table-toolbar" style={{ justifyContent: 'space-between' }}>
-            <span className="lead">
-              {offset + 1}–{Math.min(offset + PAGE_SIZE, state.data.total)} of {state.data.total}
-            </span>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button
-                type="button"
-                className="btn white sm"
-                disabled={offset === 0}
-                onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                className="btn white sm"
-                disabled={offset + PAGE_SIZE >= state.data.total}
-                onClick={() => setOffset(offset + PAGE_SIZE)}
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        </>
+        <DataTable
+          rows={state.data.items}
+          columns={columns}
+          server
+          rowCount={state.data.total}
+          paginationModel={paginationModel}
+          onPaginationModelChange={setPaginationModel}
+        />
       ) : null}
     </div>
   );
